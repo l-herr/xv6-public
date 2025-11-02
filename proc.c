@@ -366,20 +366,48 @@ scheduler(void)
 void
 sched(void)
 {
-  int intena;
-  struct proc *p = myproc();
+  struct cpu *c = mycpu();
+  struct proc *p;
+  struct proc *highest;
+  int bestPriority;
 
-  if(!holding(&ptable.lock))
-    panic("sched ptable.lock");
-  if(mycpu()->ncli != 1)
-    panic("sched locks");
-  if(p->state == RUNNING)
-    panic("sched running");
-  if(readeflags()&FL_IF)
-    panic("sched interruptible");
-  intena = mycpu()->intena;
-  swtch(&p->context, mycpu()->scheduler);
-  mycpu()->intena = intena;
+  c->proc = 0;
+  for(;;){
+    sti();  
+
+    acquire(&ptable.lock);
+
+    highest = 0;
+    bestPriority = 201;  
+
+    // pass 1: find the runnable process with the highest priority
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->state != RUNNABLE)
+        continue;
+      if(p->priority < bestPriority){
+        bestPriority = p->priority;
+        highest = p;
+      }
+    }
+
+    // pass 2: run all processes with that same top priority
+    if(highest){
+      for(p = highest; p < &ptable.proc + NPROC; p++){
+        if(p->state == RUNNABLE && p->priority == bestPriority){
+          c->proc = p;
+          switchuvm(p);
+          p->state = RUNNING;
+
+          swtch(&(c->scheduler), p->context);
+          switchkvm();
+
+          c->proc = 0;
+        }
+      }
+    }
+
+    release(&ptable.lock);
+  }
 }
 
 // Give up the CPU for one scheduling round.
