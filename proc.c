@@ -381,7 +381,7 @@ sched(void)
     bestPriority = 201;  
 
     // pass 1: find the runnable process with the highest priority
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    for(p = highest; p < ptable.proc + NPROC; p++){
       if(p->state != RUNNABLE)
         continue;
       if(p->priority < bestPriority){
