@@ -488,9 +488,17 @@ wakeup1(void *chan)
 {
   struct proc *p;
 
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == SLEEPING && p->chan == chan)
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state == SLEEPING && p->chan == chan){
       p->state = RUNNABLE;
+
+      // Aging: reward sleeping processes by increasing their priority (smaller number)
+      if(p->priority > 0)
+        p->priority -= 2;
+      if(p->priority < 0)
+        p->priority = 0;
+    }
+  }
 }
 
 // Wake up all processes sleeping on chan.
