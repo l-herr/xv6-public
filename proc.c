@@ -324,7 +324,8 @@ void
 scheduler(void)
 {
   struct cpu *c = mycpu();
-  struct proc *p, *highest;
+  struct proc *p;
+  struct proc *highest;
   int bestPriority;
 
   c->proc = 0;
@@ -334,9 +335,9 @@ scheduler(void)
     acquire(&ptable.lock);
 
     highest = 0;
-    bestPriority = 201;  // higher than valid max (0..200)
+    bestPriority = 201;  // higher than valid max
 
-    // Pass 1: find top-priority runnable proc (smallest numeric priority)
+    // Pass 1: find process with the best (lowest) priority
     for(p = ptable.proc; p < ptable.proc + NPROC; p++){
       if(p->state != RUNNABLE)
         continue;
@@ -346,26 +347,35 @@ scheduler(void)
       }
     }
 
-    // Pass 2: round-robin among procs that share that top priority
+    // Pass 2: run processes with that same best priority (round-robin)
     if(highest){
       for(p = highest; p < ptable.proc + NPROC; p++){
         if(p->state == RUNNABLE && p->priority == bestPriority){
+          // Switch to chosen process
           c->proc = p;
           switchuvm(p);
           p->state = RUNNING;
 
-          
           swtch(&(c->scheduler), p->context);
           switchkvm();
 
+          // Process is done running for now.
+          // c->proc points back to nothing.
           c->proc = 0;
-          
+
+          // When swtch() returns, ptable.lock is already held.
+          // We DO NOT release it here again — that causes panic!
         }
       }
+    } else {
+      // No runnable process — okay to release and loop
+      release(&ptable.lock);
     }
 
-    
-    release(&ptable.lock);
+    // If we ran a process, the loop continues while ptable.lock is already held.
+    // We release once here only if lock is still held.
+    if(holding(&ptable.lock))
+      release(&ptable.lock);
   }
 }
 
