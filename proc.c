@@ -323,36 +323,46 @@ wait(void)
 void
 scheduler(void)
 {
-  struct proc *p;
   struct cpu *c = mycpu();
+  struct proc *p, *highest;
+  int bestPriority;
+
   c->proc = 0;
-  
   for(;;){
-    // Enable interrupts on this processor.
     sti();
 
-    // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    highest = 0;
+    bestPriority = 201;
+
+    for(p = ptable.proc; p < ptable.proc + NPROC; p++){
       if(p->state != RUNNABLE)
         continue;
-
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
-
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      c->proc = 0;
+      if(p->priority < bestPriority){
+        bestPriority = p->priority;
+        highest = p;
+      }
     }
-    release(&ptable.lock);
 
+    if(highest){
+      for(p = highest; p < ptable.proc + NPROC; p++){
+        if(p->state == RUNNABLE && p->priority == bestPriority){
+          c->proc = p;
+          switchuvm(p);
+          p->state = RUNNING;
+
+          swtch(&(c->scheduler), p->context);
+          switchkvm();
+
+          c->proc = 0;
+
+          // Reacquire before next iteration
+          acquire(&ptable.lock);
+        }
+      }
+    } else {
+      release(&ptable.lock);
+    }
   }
 }
 
@@ -366,45 +376,21 @@ scheduler(void)
 void
 sched(void)
 {
-  struct cpu *c = mycpu();
-  struct proc *p;
-  struct proc *highest;
-  int bestPriority;
+  int intena;
+  struct proc *p = myproc();
 
-  c->proc = 0;
-  for(;;){
-    sti();  
-
-    acquire(&ptable.lock);
-
-    highest = 0;
-    bestPriority = 201;  
-
-    // pass 1: find the runnable process with the highest priority
-    for(p = highest; p < ptable.proc + NPROC; p++){
-      if(p->state != RUNNABLE)
-        continue;
-      if(p->priority < bestPriority){
-        bestPriority = p->priority;
-        highest = p;
-      }
-    }
-
-    // pass 2: run all processes with that same top priority
-    if(highest){
-      for(p = highest; p < &ptable.proc + NPROC; p++){
-        if(p->state == RUNNABLE && p->priority == bestPriority){
-          c->proc = p;
-          switchuvm(p);
-          p->state = RUNNING;
-
-          swtch(&(c->scheduler), p->context);
-          switchkvm();
-
-          c->proc = 0;
-        }
-      }
-    }
+  if(!holding(&ptable.lock))
+    panic("sched ptable.lock");
+  if(mycpu()->ncli != 1)
+    panic("sched locks");
+  if(p->state == RUNNING)
+    panic("sched running");
+  if(readeflags() & FL_IF)
+    panic("sched interruptible");
+  intena = mycpu()->intena;
+  swtch(&p->context, mycpu()->scheduler);
+  mycpu()->intena = intena;
+}
 
     release(&ptable.lock);
   }
