@@ -329,12 +329,14 @@ scheduler(void)
 
   c->proc = 0;
   for(;;){
-    sti();
+    sti();  // enable interrupts
 
     acquire(&ptable.lock);
-    highest = 0;
-    bestPriority = 201;
 
+    highest = 0;
+    bestPriority = 201;  // higher than valid max (0..200)
+
+    // Pass 1: find top-priority runnable proc (smallest numeric priority)
     for(p = ptable.proc; p < ptable.proc + NPROC; p++){
       if(p->state != RUNNABLE)
         continue;
@@ -344,6 +346,7 @@ scheduler(void)
       }
     }
 
+    // Pass 2: round-robin among procs that share that top priority
     if(highest){
       for(p = highest; p < ptable.proc + NPROC; p++){
         if(p->state == RUNNABLE && p->priority == bestPriority){
@@ -351,51 +354,20 @@ scheduler(void)
           switchuvm(p);
           p->state = RUNNING;
 
+          
           swtch(&(c->scheduler), p->context);
           switchkvm();
 
           c->proc = 0;
-
-          // Reacquire before next iteration
-          acquire(&ptable.lock);
+          
         }
       }
-    } else {
-      release(&ptable.lock);
     }
-  }
-}
 
-// Enter scheduler.  Must hold only ptable.lock
-// and have changed proc->state. Saves and restores
-// intena because intena is a property of this
-// kernel thread, not this CPU. It should
-// be proc->intena and proc->ncli, but that would
-// break in the few places where a lock is held but
-// there's no process.
-void
-sched(void)
-{
-  int intena;
-  struct proc *p = myproc();
-
-  if(!holding(&ptable.lock))
-    panic("sched ptable.lock");
-  if(mycpu()->ncli != 1)
-    panic("sched locks");
-  if(p->state == RUNNING)
-    panic("sched running");
-  if(readeflags() & FL_IF)
-    panic("sched interruptible");
-  intena = mycpu()->intena;
-  swtch(&p->context, mycpu()->scheduler);
-  mycpu()->intena = intena;
-}
-
+    
     release(&ptable.lock);
   }
 }
-
 // Give up the CPU for one scheduling round.
 void
 yield(void)
