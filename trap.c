@@ -54,6 +54,15 @@ trap(struct trapframe *tf)
       wakeup(&ticks);
       release(&tickslock);
     }
+
+    // Aging: penalize CPU-bound processes by lowering their priority
+    if(myproc() && myproc()->state == RUNNING){
+      if(myproc()->priority < 200)
+        myproc()->priority += 2;  // larger number = lower priority
+      if(myproc()->priority > 200)
+        myproc()->priority = 200;
+    }
+
     lapiceoi();
     break;
   case T_IRQ0 + IRQ_IDE:
