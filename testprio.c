@@ -1,57 +1,52 @@
-// testprio.c : basic test of priority-based scheduler
 #include "types.h"
 #include "stat.h"
 #include "user.h"
 
-// forward-declared for later (once Part 2 is done)
-// int setpriority(int);
-
-void cpu_bound(const char *name, int loops)
-{
-  for (int i = 0; i < loops; i++) {
-    // waste some CPU time
-    int j = 0;
-    while (j < 1000000)
-      j++;
-    if (i % 5 == 0)
-      printf(1, "%s iteration %d\n", name, i);
-  }
-  printf(1, "%s finished\n", name);
-}
+#define NCHILD 3
 
 int
-main(int argc, char *argv[])
+main(void)
 {
-  printf(1, "\n=== Priority Scheduler Test ===\n");
+  int pid, i;
 
-  // spawn several children with different priorities (default = 50)
-  for (int i = 0; i < 3; i++) {
-    int pid = fork();
+  printf(1, "Starting priority scheduler test...\n");
+
+  for (i = 0; i < NCHILD; i++) {
+    pid = fork();
     if (pid == 0) {
       // Child
-      if (i == 0) {
-        // Highest priority (0)
-        // setpriority(0);
-        printf(1, "Child A priority 0 starting\n");
-      } else if (i == 1) {
-        // Mid priority
-        // setpriority(50);
-        printf(1, "Child B priority 50 starting\n");
-      } else {
-        // Low priority (100)
-        // setpriority(100);
-        printf(1, "Child C priority 100 starting\n");
+      int mypid = getpid();
+      int startprio = 50 + (i * 50);
+      setpriority(startprio);
+      printf(1, "Child %d started with priority %d\n", mypid, startprio);
+
+      // Simulate CPU work
+      int j;
+      for (j = 0; j < 5; j++) {
+        printf(1, "Child %d running at priority %d (loop %d)\n", mypid, startprio, j);
+        sleep(100);
       }
 
-      cpu_bound((i == 0 ? "A" : i == 1 ? "B" : "C"), 10);
+      // Change priority mid-run
+      int newp = 10 + (i * 20);
+      int oldp = setpriority(newp);
+      printf(1, "Child %d changed priority from %d to %d\n", mypid, oldp, newp);
+
+      for (j = 0; j < 5; j++) {
+        printf(1, "Child %d running again at new priority %d (loop %d)\n", mypid, newp, j);
+        sleep(100);
+      }
+
       exit();
     }
   }
 
-  // Parent waits for all children
-  for (int i = 0; i < 3; i++)
+  // parent waits for all children
+  for (i = 0; i < NCHILD; i++) {
     wait();
+  }
 
-  printf(1, "=== Test complete ===\n");
+  printf(1, "Priority test complete.\n");
   exit();
 }
+
