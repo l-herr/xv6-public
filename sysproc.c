@@ -89,3 +89,24 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+int
+sys_setpriority(void)
+{
+  int newp;
+  struct proc *p = myproc();
+
+  if (argint(0, &newp) < 0)
+    return -1;
+  if (newp < 0 || newp > 200)
+    return -1;
+
+  int oldp = p->priority;
+  p->priority = newp;
+
+  // yield if priority is lowered 
+  if (newp > oldp)
+    yield();
+
+  return oldp;
+}
