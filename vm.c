@@ -271,7 +271,9 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       if(pa == 0)
         panic("kfree");
       char *v = P2V(pa);
-      kfree(v);
+    
+      if(*pte & PTE_W)
+        kfree(v);
       *pte = 0;
     }
   }
@@ -342,6 +344,102 @@ copyuvm(pde_t *pgdir, uint sz)
 bad:
   freevm(d);
   return 0;
+}
+
+pde_t*
+copyuvm_cow(pde_t *pgdir, uint sz)
+{
+  pde_t *d;
+  pte_t *pte;
+  uint pa, i, flags;
+
+  if((d = setupkvm()) == 0)
+    return 0;
+
+  for(i = 0; i < sz; i += PGSIZE){
+    if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
+      panic("copyuvm_cow: pte should exist");
+    if(!(*pte & PTE_P))
+      panic("copyuvm_cow: page not present");
+
+    pa = PTE_ADDR(*pte);
+    flags = PTE_FLAGS(*pte);
+
+    // Clear write bit in both parent and child.
+    flags &= ~PTE_W;
+    *pte = pa | flags;   // update parent
+
+    if(mappages(d, (void*)i, PGSIZE, pa, flags) < 0)
+      goto bad;
+  }
+
+  
+  flush_tlb_all();
+
+  return d;
+
+bad:
+  freevm(d);
+  return 0;
+}
+
+void
+handle_pgflt(void)
+{
+  struct proc *curproc = myproc();
+  uint va;
+  pte_t *pte;
+  uint pa;
+  char *mem;
+  uint flags;
+
+  if(curproc == 0)
+    panic("handle_pgflt: no current process");
+
+
+  va = read_cr2();
+  va = PGROUNDDOWN(va);
+
+
+  if(va >= KERNBASE || va >= curproc->sz){
+    cprintf("pid %d %s: invalid page fault va=0x%x\n",
+            curproc->pid, curproc->name, va);
+    curproc->killed = 1;
+    exit();
+  }
+
+  pte = walkpgdir(curproc->pgdir, (char*)va, 0);
+  if(pte == 0 || (*pte & PTE_P) == 0 || (*pte & PTE_U) == 0){
+    cprintf("pid %d %s: page fault on unmapped/invalid va=0x%x\n",
+            curproc->pid, curproc->name, va);
+    curproc->killed = 1;
+    exit();
+  }
+
+
+  if(*pte & PTE_W){
+    cprintf("pid %d %s: page fault on writable page va=0x%x\n",
+            curproc->pid, curproc->name, va);
+    curproc->killed = 1;
+    exit();
+  }
+
+
+  pa = PTE_ADDR(*pte);
+  if((mem = kalloc()) == 0){
+    cprintf("handle_pgflt: out of memory\n");
+    curproc->killed = 1;
+    exit();
+  }
+  memmove(mem, (char*)P2V(pa), PGSIZE);
+
+  
+  flags = PTE_FLAGS(*pte);
+  flags |= PTE_W;
+  *pte = V2P(mem) | flags;
+
+  
+  flush_tlb_all();
 }
 
 //PAGEBREAK!
