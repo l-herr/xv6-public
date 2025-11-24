@@ -46,6 +46,21 @@ trap(struct trapframe *tf)
     return;
   }
 
+
+  if(tf->trapno == T_PGFLT){
+  
+    if((tf->cs & 3) == 0){
+      cprintf("kernel page fault eip %x (cr2=0x%x)\n",
+              tf->eip, read_cr2());
+      panic("kernel page fault");
+    }
+
+
+    myproc()->tf = tf;
+    handle_pgflt();
+    return;
+  }
+
   switch(tf->trapno){
   case T_IRQ0 + IRQ_TIMER:
     if(cpuid() == 0){
